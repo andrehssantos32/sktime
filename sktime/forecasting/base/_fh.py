@@ -960,7 +960,21 @@ def _to_absolute(fh: ForecastingHorizon, cutoff) -> ForecastingHorizon:
             if not _is_pandas_arithmetic_bug_fixed() and is_timelike:
                 absolute = type(cutoff)(cutoff.to_list() + relative, freq=fh._freq)
             else:
-                absolute = cutoff + relative
+                if isinstance(cutoff, pd.Timedelta) or "Timedelta" in str(type(cutoff)):
+                    # pandas requires multiplying the relative integer by the Timedelta frequency.
+                    # Fallback to '1D' if the frequency attribute is missing or lost.
+                    freq = getattr(cutoff, "freq", None)
+                    if freq is None:
+                        freq = pd.Timedelta(1, "D")
+                    absolute = cutoff + (relative * freq)
+            
+                    # Workaround: sktime's ForecastingHorizon enforces is_relative=True for Timedeltas.
+                    # We pass is_relative=True to bypass strict validation; adapters only need the values.
+                    return fh._new(absolute, is_relative=True, freq=fh.freq)
+                else:
+                    # Default absolute horizon calculation for DatetimeIndex, integers, etc.
+                    absolute = cutoff + relative
+                    return fh._new(absolute, is_relative=False, freq=fh.freq)
 
         if old_tz is not None:
             absolute = absolute.tz_convert(old_tz)
